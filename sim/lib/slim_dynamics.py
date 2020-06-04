@@ -70,9 +70,7 @@ def launch_simulation(mob_settings, distributions, params,
         'children_count_iasy': sim.children_count_iasy,
         'children_count_ipre': sim.children_count_ipre,
         'children_count_isym': sim.children_count_isym,
-        'initial_seeds': sim.initial_seeds,
-        'snapshots': sim.snapshots,
-        't_snap': sim.t_snap
+        'initial_seeds': sim.initial_seeds
     }
     
     
@@ -90,8 +88,6 @@ def launch_simulation(mob_settings, distributions, params,
     summary.children_count_ipre[:] = res['children_count_ipre']
     summary.children_count_isym[:] = res['children_count_isym']
     summary.seeds = res['initial_seeds']
-    summary.snapshots = res['snapshots']
-    summary.t_snap = res['t_snap']
     summary.mob = mob
     
     return summary
@@ -151,9 +147,7 @@ class Summary(object):
         self.children_count_ipre = np.zeros(n_people, dtype='int')
         self.children_count_isym = np.zeros(n_people, dtype='int')
         self.seeds = {}
-        self.snapshots = {}
-        self.t_snap= {}
-
+  
 
         
         
@@ -231,9 +225,9 @@ class DiseaseModel(object):
         self.last_print = time.time()
         self._PRINT_INTERVAL = 0.1
         self._PRINT_MSG = (
-            't: {t:.2f} '
+            't: {t:.0f} '
             '| '
-            '{maxt:.2f} hrs '
+            '{maxt:.0f} hrs '
             '({maxd:.0f} d)'
             )
 
@@ -317,9 +311,6 @@ class DiseaseModel(object):
         self.children_count_isym = np.zeros(self.n_people, dtype='int')
         
        
-        #daily snapshot of the epidemics
-        self.snapshots = dict()
-        self.t_snap = dict()
         
         self.initial_seeds = dict()
  
@@ -669,8 +660,6 @@ class DiseaseModel(object):
         # init state variables with seeds
         self.initial_seeds = dict(ini_seeds)        
         
-        self.snapshots[0]=self.seeds_to_states()
-        self.t_snap[0]=0.0
         
         ### sample all iid events ahead of time in batch
         batch_size = (self.n_people, )
@@ -706,14 +695,9 @@ class DiseaseModel(object):
         # MAIN EVENT LOOP
         t = 0.0
        
-        t_day=1
         while self.queue:
 
-            if(t>t_day*TO_HOURS):
-                self.snapshots[t_day]=dict(self.state)
-                self.t_snap[t_day]=t
-                t_day+=1
-
+        
             # get next event to process
             t, event, i, infector, k = self.queue.pop()
 
@@ -832,8 +816,7 @@ class DiseaseModel(object):
         # free memory
         del self.queue
         
-        self.snapshots[t_day]=dict(self.state)
-
+   
 
 
     def initialize_states_for_seeds(self):
@@ -931,3 +914,22 @@ class DiseaseModel(object):
                 status[state][i]=True
                 
         return status
+    
+
+def comp_state_over_time(sim, state):
+    '''
+    Computes `state` variable over time [0, sim.max_time] 
+    '''
+    t_unit=24
+    ts, val = [], []
+    for t in np.linspace(0.0, sim.max_time, num=sim.max_time+1, endpoint=True):
+        s = sum([np.sum(is_state_at(sim, status, t)) for status in state])
+        ts.append(t/t_unit)
+        val.append(s)
+
+    return np.array(ts), np.array(val)
+    
+    
+def is_state_at(sim, state, t):
+        
+    return (sim.state_started_at[state] <= t) & (sim.state_ended_at[state] > t)
