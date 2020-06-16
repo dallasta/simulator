@@ -887,10 +887,18 @@ class DiseaseModel(object):
                     self.state_ended_at['iasy'][i] = -1.0
                     self.bernoulli_is_iasy[i] = 0
 
+                elif state == 'susc':
+                    self.state['susc'][i] = True
+
                 # inital exposed
                 elif state == 'expo':
                     self.state['quar'][i] = False
                     self.__process_exposure_event(0.0, i, None)
+
+                elif state == 'hosp':
+                    self.state['hosp'][i] = True
+                    self.state_started_at['hosp'][i] = -1.0
+                    self.bernoulli_is_iasy[i] = 0
 
                 # initial presymptomatic
                 elif state == 'ipre':
@@ -950,7 +958,7 @@ class DiseaseModel(object):
                     self.__process_resistant_event(0.0, i)
 
                 else:
-                    raise ValueError('Invalid initial seed state.')    
+                    raise ValueError('Invalid initial seed state,',state)    
         
          
     def seeds_to_states(self):
