@@ -18,7 +18,7 @@ from lib.mobilitysim_split import MobilitySimulator
 TO_HOURS = 24.0
 
 
-pp_legal_states = ['susc', 'expo', 'ipre', 'isym', 'iasy', 'resi', 'dead', 'hosp']
+pp_legal_states = ['susc', 'expo', 'ipre', 'isym', 'iasy', 'resi', 'dead', 'hosp', 'quar']
 
 
 ######################## functions and classes for launching the simulation ##############################
@@ -116,6 +116,7 @@ class Summary(object):
             'resi': np.zeros(n_people, dtype='bool'),
             'dead': np.zeros(n_people, dtype='bool'),
             'hosp': np.zeros(n_people, dtype='bool'),
+            'quar': np.zeros(n_people, dtype='bool'),
         }
 
         self.state_started_at = {
@@ -127,6 +128,7 @@ class Summary(object):
             'resi': np.inf * np.ones(n_people, dtype='float'),
             'dead': np.inf * np.ones(n_people, dtype='float'),
             'hosp': np.inf * np.ones(n_people, dtype='float'),
+            'quar': np.inf * np.ones(n_people, dtype='float'),
         }
         self.state_ended_at = {
             'susc': np.inf * np.ones(n_people, dtype='float'),
@@ -137,6 +139,7 @@ class Summary(object):
             'resi': np.inf * np.ones(n_people, dtype='float'),
             'dead': np.inf * np.ones(n_people, dtype='float'),
             'hosp': np.inf * np.ones(n_people, dtype='float'),
+            'quar': np.inf * np.ones(n_people, dtype='float'),
         }
         
         self.mob = []
@@ -256,10 +259,10 @@ class DiseaseModel(object):
         'resi': resistant
         'dead': dead
         'hosp': hospitalized
-
+	'quar': quarantined
      
         '''
-        self.legal_states = ['susc', 'expo', 'ipre', 'isym', 'iasy', 'resi', 'dead', 'hosp']
+        self.legal_states = ['susc', 'expo', 'ipre', 'isym', 'iasy', 'resi', 'dead', 'hosp', 'quar']
         self.legal_preceeding_state = {
             'expo' : ['susc',],
             'ipre' : ['expo',],
@@ -268,6 +271,7 @@ class DiseaseModel(object):
             'resi' : ['isym', 'iasy'],
             'dead' : ['isym',],
             'hosp' : ['isym',],
+	    'quar' : ['isym', 'iasy'],
         }
 
         self.state = {
@@ -279,6 +283,7 @@ class DiseaseModel(object):
             'resi': np.zeros(self.n_people, dtype='bool'),
             'dead': np.zeros(self.n_people, dtype='bool'),
             'hosp': np.zeros(self.n_people, dtype='bool'),
+	    'quar': np.zeros(self.n_people, dtype='bool'),
         }
 
         self.state_started_at = {
@@ -290,6 +295,7 @@ class DiseaseModel(object):
             'resi': np.inf * np.ones(self.n_people, dtype='float'),
             'dead': np.inf * np.ones(self.n_people, dtype='float'),
             'hosp': np.inf * np.ones(self.n_people, dtype='float'),
+	    'quar': np.inf * np.ones(self.n_people, dtype='float'),
         }
         self.state_ended_at = {
             'susc': np.inf * np.ones(self.n_people, dtype='float'),
@@ -300,6 +306,7 @@ class DiseaseModel(object):
             'resi': np.inf * np.ones(self.n_people, dtype='float'),
             'dead': np.inf * np.ones(self.n_people, dtype='float'),
             'hosp': np.inf * np.ones(self.n_people, dtype='float'),
+            'quar': np.inf * np.ones(self.n_people, dtype='float'),
         }   
        
         # infector of i
@@ -310,8 +317,7 @@ class DiseaseModel(object):
         self.children_count_ipre = np.zeros(self.n_people, dtype='int')
         self.children_count_isym = np.zeros(self.n_people, dtype='int')
         
-       
-        
+      
         self.initial_seeds = dict()
  
  
@@ -324,7 +330,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['susc'][i])
+        assert(self.state['susc'][i]) # no need to check quar state
         self.state['susc'][i] = False
         self.state['expo'][i] = True
         self.state_ended_at['susc'][i] = t
@@ -358,7 +364,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['expo'][i])
+        assert(self.state['expo'][i]) # no need to check quar state
         self.state['ipre'][i] = True
         self.state['expo'][i] = False
         self.state_ended_at['expo'][i] = t
@@ -383,7 +389,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['ipre'][i])
+        assert(self.state['ipre'][i]) # no need to check quar state
         self.state['isym'][i] = True
         self.state['ipre'][i] = False
         self.state_ended_at['ipre'][i] = t
@@ -413,7 +419,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['expo'][i])
+        assert(self.state['expo'][i]) # no need to check quar state
         self.state['iasy'][i] = True
         self.state['expo'][i] = False
         self.state_ended_at['expo'][i] = t
@@ -439,6 +445,7 @@ class DiseaseModel(object):
 
         # track flags
         assert(self.state['iasy'][i] != self.state['isym'][i]) # XOR
+        assert(self.state['quar'][i] == False) # XOR
         self.state['resi'][i] = True
         self.state_started_at['resi'][i] = t
         
@@ -464,7 +471,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['isym'][i])
+        assert(self.state['isym'][i])  # no need to check quar state
         self.state['dead'][i] = True
         self.state_started_at['dead'][i] = t
 
@@ -482,7 +489,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['isym'][i])
+        assert(self.state['isym'][i]) # no need to check quar state
         self.state['hosp'][i] = True
         self.state_started_at['hosp'][i] = t
     
@@ -625,10 +632,6 @@ class DiseaseModel(object):
 
             sampled_event = True
 
-
- 
-    
-
     
     def launch_epidemic(self, params, ini_seeds, verbose=True):
         """
@@ -652,7 +655,6 @@ class DiseaseModel(object):
             self.beta_household = 0.0
 
        
-        
 
         self.__init_run()
         self.was_initial_seed = np.zeros(self.n_people, dtype='bool')
@@ -709,7 +711,7 @@ class DiseaseModel(object):
                 if self.verbose:
                     print(f'\n[Reached max time: {int(self.max_time)}h ({int(self.max_time // 24)}d)]')
                 break
-            if np.sum((1 - self.state['susc']) * (self.state['resi'] + self.state['dead'])) == self.n_people:
+            if np.sum((1 - self.state['susc']) * (self.state['resi'] + self.state['dead'] + self.state['quar'])) == self.n_people:
                 if self.verbose:
                     print('\n[Simulation ended]')
                 break
@@ -729,7 +731,7 @@ class DiseaseModel(object):
                     # 1) check whether infector recovered or dead
                     infector_recovered = \
                         (self.state['resi'][infector] or 
-                            self.state['dead'][infector])
+                            self.state['dead'][infector] or self.state['quar'][infector])
 
                     # 2) check whether infector got hospitalized
                     infector_hospitalized = self.state['hosp'][infector]
@@ -774,7 +776,7 @@ class DiseaseModel(object):
                     # 1) check whether infector recovered or dead
                     infector_recovered = \
                         (self.state['resi'][infector] or 
-                            self.state['dead'][infector])
+                            self.state['dead'][infector] or self.state['quar'][infector])
 
                     
                     # if 1 is not true, the event is valid
@@ -802,7 +804,7 @@ class DiseaseModel(object):
                 # cannot get hospitalization if not ill anymore 
                 valid_hospitalization = \
                     ((not self.state['resi'][i]) and 
-                        (not self.state['dead'][i]))
+                        (not self.state['dead'][i]) and (not self.state['quar'][i]))
 
                 if valid_hospitalization:
                     self.__process_hosp_event(t, i)
@@ -832,12 +834,33 @@ class DiseaseModel(object):
                 assert(self.was_initial_seed[i] == False)
                 self.was_initial_seed[i] = True
                 
+                if state == 'quar':
+                    self.state['quar'][i] = True
+                    self.state['expo'][i] = False 
+                    self.was_initial_seed[i] = False
+                    self.state['ipre'][i] = False
+                    self.state['iasy'][i] = False
+                    self.state['susc'][i] = False
+                    self.state['hosp'][i] = False
+                    self.state['resi'][i] = False
+
+                    self.state_ended_at['susc'][i] = -1.0
+                    self.state_started_at['expo'][i] = -1.0
+                    self.state_ended_at['expo'][i] = -1.0
+                    self.state_started_at['ipre'][i] = -1.0
+                    self.state_ended_at['ipre'][i] = -1.0
+                    self.state_started_at['isym'][i] = -1.0
+
+                    self.bernoulli_is_iasy[i] = 0
+
                 # inital exposed
-                if state == 'expo':
+                elif state == 'expo':
+                    self.state['quar'][i] = False
                     self.__process_exposure_event(0.0, i, None)
 
                 # initial presymptomatic
                 elif state == 'ipre':
+                    self.state['quar'][i] = False
                     self.state['susc'][i] = False
                     self.state['expo'][i] = True
 
@@ -847,10 +870,10 @@ class DiseaseModel(object):
                     self.bernoulli_is_iasy[i] = 0
                     self.__process_presymptomatic_event(0.0, i)
 
-
                 # initial asymptomatic
                 elif state == 'iasy':
 
+                    self.state['quar'][i] = False
                     self.state['susc'][i] = False
                     self.state['expo'][i] = True
 
@@ -863,6 +886,7 @@ class DiseaseModel(object):
                 # initial symptomatic
                 elif state == 'isym':
 
+                    self.state['quar'][i] = False
                     self.state['susc'][i] = False
                     self.state['ipre'][i] = True
 
@@ -877,6 +901,7 @@ class DiseaseModel(object):
                 # initial resistant
                 elif state == 'resi':
 
+                    self.state['quar'][i] = False
                     self.state['susc'][i] = False
                     self.state['isym'][i] = True
 
@@ -906,6 +931,7 @@ class DiseaseModel(object):
             'resi': np.zeros(self.n_people, dtype='bool'),
             'dead': np.zeros(self.n_people, dtype='bool'),
             'hosp': np.zeros(self.n_people, dtype='bool'),
+            'quar': np.zeros(self.n_people, dtype='bool'),
         }
         
         for state, seeds_ in self.initial_seeds.items():
