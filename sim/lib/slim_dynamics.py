@@ -46,7 +46,7 @@ def launch_simulation(mob_settings, distributions, params,
 
     mob = MobilitySimulator(**kwargs)
 
-    mob.simulate(max_time=max_time, seed=12345)
+    mob.simulate(max_time=max_time, seed=12345, forbidden=initial_seeds['quar'])
     num_people=mob.num_people, 
     num_sites=mob.num_sites, 
     site_loc=mob.site_loc, 
@@ -538,7 +538,7 @@ class DiseaseModel(object):
        
         # generate potential exposure event for `j` from contact with `infector`
         for j in valid_contacts:
-            #print(infector, j)
+            #print("qua 0", infector, j)
             self.__push_contact_exposure_infector_to_j(t=t, infector=infector, j=j, base_rate=base_rate)
 
 
@@ -558,18 +558,17 @@ class DiseaseModel(object):
             # check if j could get infected from infector at current `tau`
             # i.e. there is `delta`-contact from infector to j (i.e. non-zero intensity)
             has_infectious_contact, contact = self.mob.is_in_contact(indiv_i=j, indiv_j=infector, t=tau, site=None)
+            #print("qua",j, infector)
 
             # if yes: do nothing 
             if has_infectious_contact:
                 pass 
 
-            if self.state['quar'][j]:
-                print("qua")
             # if no:       
             else: 
                 # directly jump to next contact start of a `delta`-contact (memoryless property)
                 next_contact = self.mob.next_contact(indiv_i=j, indiv_j=infector, t=tau, site=None)
-
+                #print("qua 1", j, infector)
                 assert(next_contact is not None) # (while loop invariant)
                 tau = next_contact.t_from
 
@@ -581,6 +580,7 @@ class DiseaseModel(object):
             # thinning step: compute current lambda(tau) and do rejection sampling
             sampled_at_infectious_contact, sampled_at_contact = self.mob.is_in_contact(indiv_i=j, indiv_j=infector, t=tau, site=None)
 
+
             # 1) reject w.p. 1 if there is no more infectious contact at the new time (lambda(tau) = 0)
             if not sampled_at_infectious_contact:
                 continue
@@ -591,6 +591,7 @@ class DiseaseModel(object):
             infector_present = self.mob.list_intervals_in_window_individual_at_site(
                 indiv=infector, site=site, t0=tau - self.delta, t1=tau)
 
+            #print("qua 4", infector)
             # b. compute contributions of infector being present in [tau - delta, tau]
             intersections = [(max(tau - self.delta, interv.left), min(tau, interv.right))
                 for interv in infector_present]
@@ -797,7 +798,7 @@ class DiseaseModel(object):
                 # contact exposure
                 if (infector is not None) and i_susceptible and k >= 0:
 
-                    print(i, infector)
+                    #print("qua 6",i, infector)
                     is_in_contact, contact = self.mob.is_in_contact(indiv_i=i, indiv_j=infector, site=k, t=t)
                     assert(is_in_contact and (k is not None))
                     i_visit_id, infector_visit_id = contact.id_tup
