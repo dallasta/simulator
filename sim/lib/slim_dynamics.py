@@ -330,7 +330,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['susc'][i]) # no need to check quar state
+        assert(self.state['susc'][i]) 
         self.state['susc'][i] = False
         self.state['expo'][i] = True
         self.state_ended_at['susc'][i] = t
@@ -352,7 +352,7 @@ class DiseaseModel(object):
             self.queue.push(
                 (t + self.delta_expo_to_iasy[i], 'iasy', i, None, None),
                 priority=t + self.delta_expo_to_iasy[i])
-        else:
+        elif (not self.state['quar'][i]):
             self.queue.push(
                 (t + self.delta_expo_to_ipre[i], 'ipre', i, None, None),
                 priority=t + self.delta_expo_to_ipre[i])
@@ -365,9 +365,11 @@ class DiseaseModel(object):
 
         # track flags
         assert(self.state['expo'][i]) # no need to check quar state
+       
         self.state['ipre'][i] = True
         self.state['expo'][i] = False
         self.state_ended_at['expo'][i] = t
+        self.state['quar'][i] = False
         self.state_started_at['ipre'][i] = t
 
         # resistant event
@@ -390,6 +392,7 @@ class DiseaseModel(object):
 
         # track flags
         assert(self.state['ipre'][i]) # no need to check quar state
+       
         self.state['isym'][i] = True
         self.state['ipre'][i] = False
         self.state_ended_at['ipre'][i] = t
@@ -420,6 +423,7 @@ class DiseaseModel(object):
 
         # track flags
         assert(self.state['expo'][i]) # no need to check quar state
+       
         self.state['iasy'][i] = True
         self.state['expo'][i] = False
         self.state_ended_at['expo'][i] = t
@@ -445,7 +449,7 @@ class DiseaseModel(object):
 
         # track flags
         assert(self.state['iasy'][i] != self.state['isym'][i]) # XOR
-        assert(self.state['quar'][i] == False) # XOR
+        assert(not self.state['quar'][i]) # XOR
         self.state['resi'][i] = True
         self.state_started_at['resi'][i] = t
         
@@ -472,6 +476,7 @@ class DiseaseModel(object):
 
         # track flags
         assert(self.state['isym'][i])  # no need to check quar state
+       
         self.state['dead'][i] = True
         self.state_started_at['dead'][i] = t
 
@@ -490,9 +495,21 @@ class DiseaseModel(object):
 
         # track flags
         assert(self.state['isym'][i]) # no need to check quar state
+       
         self.state['hosp'][i] = True
         self.state_started_at['hosp'][i] = t
     
+    def __process_quarantine_event(self, t, i):
+        """
+        Mark person `i` as hospitalized at time `t`
+        """
+
+        # track flags
+        assert(self.state['quar'][i]) 
+       
+        self.state['quar'][i] = True
+        self.state_started_at['quar'][i] = t
+        self.bernoulli_is_iasy[i] = 0
 
     def __kernel_term(self, a, b, T):
         '''Computes
@@ -513,7 +530,7 @@ class DiseaseModel(object):
             '''Generates indices j where `infector` is present
             at least `self.delta` hours before j '''
             for j in range(self.n_people):
-                if self.state['susc'][j]:
+                if self.state['susc'][j] and (not self.state['quar'][j]) and (not self.state['quar'][infector]):
                     if self.mob.will_be_in_contact(indiv_i=j, indiv_j=infector, t=t, site=None):
                         yield j
 
@@ -521,6 +538,7 @@ class DiseaseModel(object):
        
         # generate potential exposure event for `j` from contact with `infector`
         for j in valid_contacts:
+            #print(infector, j)
             self.__push_contact_exposure_infector_to_j(t=t, infector=infector, j=j, base_rate=base_rate)
 
 
@@ -535,16 +553,18 @@ class DiseaseModel(object):
         Z = self.__kernel_term(- self.delta, 0.0, 0.0)
 
         # sample next arrival from non-homogeneous point process
-        while self.mob.will_be_in_contact(indiv_i=j, indiv_j=infector, t=tau, site=None) and not sampled_event:
+        while self.mob.will_be_in_contact(indiv_i=j, indiv_j=infector, t=tau, site=None) and not sampled_event and (not self.state['quar'][j]) and (not self.state['quar'][infector]):
             
             # check if j could get infected from infector at current `tau`
             # i.e. there is `delta`-contact from infector to j (i.e. non-zero intensity)
             has_infectious_contact, contact = self.mob.is_in_contact(indiv_i=j, indiv_j=infector, t=tau, site=None)
 
-            # if yes: do nothing
+            # if yes: do nothing 
             if has_infectious_contact:
                 pass 
 
+            if self.state['quar'][j]:
+                print("qua")
             # if no:       
             else: 
                 # directly jump to next contact start of a `delta`-contact (memoryless property)
@@ -600,11 +620,12 @@ class DiseaseModel(object):
             '''Generates indices j where `infector` is present
             at least `self.delta` hours before j '''
             for j in self.households[self.people_household[infector]]:
-                if self.state['susc'][j]:
+                if self.state['susc'][j] and (not self.state['quar'][infector]) and (not self.state['quar'][j]):
                     yield j
 
         # generate potential exposure event for `j` from contact with `infector`
         for j in valid_j():
+            #print(j, infector)
             self.__push_household_exposure_infector_to_j(t=t, infector=infector, j=j, base_rate=base_rate)
 
     def __push_household_exposure_infector_to_j(self, t, infector, j, base_rate):
@@ -622,7 +643,7 @@ class DiseaseModel(object):
 
         lambda_household = self.beta_household * base_rate
 
-        while tau < self.max_time and not sampled_event:
+        while tau < self.max_time and not sampled_event and (not self.state['quar'][j]) and (not self.state['quar'][infector]):
             tau += TO_HOURS * np.random.exponential(scale=1.0 / lambda_household)
 
             # site = -1 means it is a household infection
@@ -687,7 +708,7 @@ class DiseaseModel(object):
         if self.lambda_0 > 0.0:
             delta_susc_to_expo = self.d.sample_susc_baseexpo(size=self.n_people)
             for i in range(self.n_people):
-                if not self.was_initial_seed[i]:
+                if (not self.was_initial_seed[i]) and (not self.state['quar'][i]):
                     # sample non-contact exposure events
                     self.queue.push(
                         (delta_susc_to_expo[i], 'expo', i, None, None),
@@ -702,8 +723,9 @@ class DiseaseModel(object):
         
             # get next event to process
             t, event, i, infector, k = self.queue.pop()
+            #print(i, infector)
 
-           
+
             # check termination
             if t > self.max_time:
                 t = self.max_time
@@ -719,7 +741,7 @@ class DiseaseModel(object):
             # process event
             if event == 'expo':
                 i_susceptible = ((not self.state['expo'][i])
-                                    and (self.state['susc'][i]))
+                                    and (self.state['susc'][i]) and (not self.state['quar'][i]))
 
                 # base rate exposure
                 if (infector is None) and i_susceptible:
@@ -736,12 +758,18 @@ class DiseaseModel(object):
                     # 2) check whether infector got hospitalized
                     infector_hospitalized = self.state['hosp'][infector]
 
+
+                    # 2.b) check whether infector is instead already quarantined
+                    quarantined_inf = self.state['quar'][infector]
+                    quarantined_i = self.state['quar'][i]
+
                     # 3) check whether infector or i are not at home
                     infector_away_from_home = False
                     i_away_from_home = False
 
-                    infector_visits = self.mob.mob_traces[infector].find((t, t))
-                    i_visits = self.mob.mob_traces[i].find((t, t))
+                    if (not quarantined_i) and (not quarantined_inf):
+                        infector_visits = self.mob.mob_traces[infector].find((t,t))
+                        i_visits = self.mob.mob_traces[i].find((t,t))
 
                     for interv in infector_visits:
                         infector_away_from_home = (interv.t_to > t)
@@ -755,12 +783,12 @@ class DiseaseModel(object):
            
 
                     # if none of 1), 2), 3) are true, the event is valid
-                    if  (not infector_recovered) and (not infector_hospitalized) and (not away_from_home):
+                    if  (not infector_recovered) and (not infector_hospitalized) and (not away_from_home) and (not quarantined_i) and (not quarantined_inf):
 
                         self.__process_exposure_event(t, i, infector)
 
                     # if 2) or 3) were true, a household infection could happen at a later point, hence sample a new event
-                    if (infector_hospitalized or away_from_home):
+                    if (infector_hospitalized or away_from_home and (not quarantined_inf) and (not quarantined_i)):
 
                         mu_infector = self.mu if self.state['iasy'][infector] else 1.0
                         self.__push_household_exposure_infector_to_j(
@@ -769,6 +797,7 @@ class DiseaseModel(object):
                 # contact exposure
                 if (infector is not None) and i_susceptible and k >= 0:
 
+                    print(i, infector)
                     is_in_contact, contact = self.mob.is_in_contact(indiv_i=i, indiv_j=infector, site=k, t=t)
                     assert(is_in_contact and (k is not None))
                     i_visit_id, infector_visit_id = contact.id_tup
@@ -799,7 +828,8 @@ class DiseaseModel(object):
 
             elif event == 'dead':
                 self.__process_fatal_event(t, i)
-
+            elif event == 'quar':
+                self.__process_quarantine_event(t, i)
             elif event == 'hosp':
                 # cannot get hospitalization if not ill anymore 
                 valid_hospitalization = \
@@ -844,13 +874,16 @@ class DiseaseModel(object):
                     self.state['hosp'][i] = False
                     self.state['resi'][i] = False
 
+                    self.state_started_at['quar'][i] = -1.0
                     self.state_ended_at['susc'][i] = -1.0
                     self.state_started_at['expo'][i] = -1.0
                     self.state_ended_at['expo'][i] = -1.0
                     self.state_started_at['ipre'][i] = -1.0
                     self.state_ended_at['ipre'][i] = -1.0
                     self.state_started_at['isym'][i] = -1.0
-
+                    self.state_ended_at['isym'][i] = -1.0
+                    self.state_started_at['iasy'][i] = -1.0
+                    self.state_ended_at['iasy'][i] = -1.0
                     self.bernoulli_is_iasy[i] = 0
 
                 # inital exposed
@@ -942,11 +975,10 @@ class DiseaseModel(object):
         return status
     
 
-def comp_state_over_time(sim, state):
+def comp_state_over_time(sim, state, t_unit):
     '''
     Computes `state` variable over time [0, sim.max_time] 
     '''
-    t_unit=24
     ts, val = [], []
     for t in np.linspace(0.0, sim.max_time, num=sim.max_time+1, endpoint=True):
         s = sum([np.sum(is_state_at(sim, status, t)) for status in state])
