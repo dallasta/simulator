@@ -23,40 +23,42 @@ pp_legal_states = ['susc', 'expo', 'ipre', 'isym', 'iasy', 'resi', 'dead', 'hosp
 
 ######################## functions and classes for launching the simulation ##############################
 
-def run(mob_settings, intensity_params, distributions, t, ini_seeds):
-
+#def run(mob_settings, intensity_params, distributions, t, ini_seeds):
+def run(mob, intensity_params, distributions, tstart, tfinal, ini_seeds):
  
     # run simulations
     summary = launch_simulation(
-        mob_settings, 
+        #mob_settings, 
+        mob, 
         distributions, 
         intensity_params, 
         ini_seeds, 
-        max_time=t
+	t0=tstart,
+        max_time=tfinal,
         )
     return summary
 
 
-def launch_simulation(mob_settings, distributions, params, 
-    initial_seeds, max_time):
+def launch_simulation(mob, distributions, params, 
+    initial_seeds, t0, max_time):
     
 
-    with open(mob_settings, 'rb') as fp:
-        kwargs = pickle.load(fp)
+    #with open(mob_settings, 'rb') as fp:
+    #    kwargs = pickle.load(fp)
 
-    mob = MobilitySimulator(**kwargs)
-
-    mob.simulate(max_time=max_time, seed=12345, forbidden=initial_seeds['quar'])
+    #mob = MobilitySimulator(**kwargs)
+    #mob.simulate(max_time=max_time, seed=12345)
     num_people=mob.num_people, 
     num_sites=mob.num_sites, 
     site_loc=mob.site_loc, 
     home_loc=mob.home_loc
     
-    sim = DiseaseModel(mob, distributions)
+    sim = DiseaseModel(t0, max_time, mob, distributions)
 
     
     sim.launch_epidemic(
         params=params,
+        t0=t0,
         ini_seeds=initial_seeds,
         verbose=True)
     
@@ -74,7 +76,7 @@ def launch_simulation(mob_settings, distributions, params,
     }
     
     
-    summary = Summary(max_time, num_people, num_sites, site_loc, home_loc)
+    summary = Summary(t0, max_time, num_people, num_sites, site_loc, home_loc)
     
     for code in pp_legal_states:
         summary.state[code][:] = res['state'][code]
@@ -99,8 +101,10 @@ class Summary(object):
     Summary class for a single evolution
     """
 
-    def __init__(self, max_time,  n_people, n_sites, site_loc, home_loc):
+    def __init__(self, t0, max_time,  n_people, n_sites, site_loc, home_loc):
 
+
+        self.t0 = t0
         self.max_time = max_time
         self.n_people = n_people
         self.n_sites = n_sites
@@ -178,7 +182,7 @@ class DiseaseModel(object):
     assumed to be in units of days as usual in epidemiology
     """
 
-    def __init__(self, mob, distributions):#, dynamic_tracing=False):
+    def __init__(self, t0, max_time, mob, distributions):#, dynamic_tracing=False):
         """
         Init simulation object with parameters
 
@@ -207,7 +211,9 @@ class DiseaseModel(object):
         # parse mobility object
         self.n_people = mob.num_people
         self.n_sites = mob.num_sites
-        self.max_time = mob.max_time
+        self.max_time = max_time
+        self.t0 = t0
+
         
         # special state variables from mob object 
         self.people_age = mob.people_age
@@ -364,7 +370,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        #assert(self.state['expo'][i]) 
+        assert(self.state['expo'][i]) 
        
         self.state['ipre'][i] = True
         self.state['expo'][i] = False
@@ -391,7 +397,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        #assert(self.state['ipre'][i]) # no need to check quar state
+        assert(self.state['ipre'][i]) # no need to check quar state
        
         self.state['isym'][i] = True
         self.state['ipre'][i] = False
@@ -422,7 +428,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        #assert(self.state['expo'][i]) # no need to check quar state
+        assert(self.state['expo'][i]) # no need to check quar state
        
         self.state['iasy'][i] = True
         self.state['expo'][i] = False
@@ -475,7 +481,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        #assert(self.state['isym'][i])  # no need to check quar state
+        assert(self.state['isym'][i])  # no need to check quar state
        
         self.state['dead'][i] = True
         self.state_started_at['dead'][i] = t
@@ -494,7 +500,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        #assert(self.state['isym'][i]) # no need to check quar state
+        assert(self.state['isym'][i]) # no need to check quar state
        
         self.state['hosp'][i] = True
         self.state_started_at['hosp'][i] = t
@@ -655,7 +661,7 @@ class DiseaseModel(object):
             sampled_event = True
 
     
-    def launch_epidemic(self, params, ini_seeds, verbose=True):
+    def launch_epidemic(self, params, t0, ini_seeds, verbose=True):
         """
         Run the epidemic, starting from initial event list.
         Events are treated in order in a priority queue. An event in the queue is a tuple
@@ -702,7 +708,7 @@ class DiseaseModel(object):
         
  
         # initial seed
-        self.initialize_states_for_seeds()
+        self.initialize_states_for_seeds(t0)
    
  
         # not initially seeded
@@ -717,7 +723,7 @@ class DiseaseModel(object):
 
         
         # MAIN EVENT LOOP
-        t = 0.0
+        t = t0
        
         while self.queue:
 
@@ -852,7 +858,7 @@ class DiseaseModel(object):
    
 
 
-    def initialize_states_for_seeds(self):
+    def initialize_states_for_seeds(self, t0):
         """
         Sets state variables according to invariants as given by `self.initial_seeds`
 
@@ -875,10 +881,10 @@ class DiseaseModel(object):
                     self.state['hosp'][i] = False
                     self.state['resi'][i] = False
 
-                    self.state_started_at['quar'][i] = -1.0
-                    self.state_ended_at['susc'][i] = -1.0
-                    self.state_started_at['expo'][i] = -1.0
-                    self.state_ended_at['expo'][i] = -1.0
+                    self.state_started_at['quar'][i] = t0
+                    self.state_ended_at['susc'][i] = -1
+                    self.state_started_at['expo'][i] = -1
+                    self.state_ended_at['expo'][i] = -1
                     self.state_started_at['ipre'][i] = -1.0
                     self.state_ended_at['ipre'][i] = -1.0
                     self.state_started_at['isym'][i] = -1.0
@@ -892,22 +898,20 @@ class DiseaseModel(object):
                     self.was_initial_seed[i] = False
 
                 elif state == 'dead':
-                    self.state['dead'][i] = True
+                    self.state['isym'][i] = True # for next assert
                     self.was_initial_seed[i] = False
-                    self.state_started_at['dead'][i] = -1.0
                     self.bernoulli_is_iasy[i] = 0
-                    self.__process_fatal_event(0.0, i)
+                    self.__process_fatal_event(t0, i)
                 # inital exposed
                 elif state == 'expo':
                     self.state['quar'][i] = False
-                    self.__process_exposure_event(0.0, i, None)
+                    self.__process_exposure_event(t0, i, None)
 
                 elif state == 'hosp':
-                    self.state['hosp'][i] = True
+                    self.state['isym'][i] = True
                     self.was_initial_seed[i] = False
-                    self.state_started_at['hosp'][i] = -1.0
                     self.bernoulli_is_iasy[i] = 0
-                    self.__process_hosp_event(0.0, i)
+                    self.__process_hosp_event(t0, i)
 
                 # initial presymptomatic
                 elif state == 'ipre':
@@ -919,7 +923,7 @@ class DiseaseModel(object):
                     self.state_started_at['expo'][i] = -1.0
 
                     self.bernoulli_is_iasy[i] = 0
-                    self.__process_presymptomatic_event(0.0, i)
+                    self.__process_presymptomatic_event(t0, i)
 
                 # initial asymptomatic
                 elif state == 'iasy':
@@ -932,7 +936,7 @@ class DiseaseModel(object):
                     self.state_started_at['expo'][i] = -1.0
 
                     self.bernoulli_is_iasy[i] = 1
-                    self.__process_asymptomatic_event(0.0, i, add_exposures=False)
+                    self.__process_asymptomatic_event(t0, i, add_exposures=False)
 
                 # initial symptomatic
                 elif state == 'isym':
@@ -947,7 +951,7 @@ class DiseaseModel(object):
                     self.state_started_at['ipre'][i] = -1.0
 
                     self.bernoulli_is_iasy[i] = 0
-                    self.__process_symptomatic_event(0.0, i)
+                    self.__process_symptomatic_event(t0, i)
 
                 # initial resistant
                 elif state == 'resi':
@@ -964,10 +968,10 @@ class DiseaseModel(object):
                     self.state_started_at['isym'][i] = -1.0
 
                     self.bernoulli_is_iasy[i] = 0
-                    self.__process_resistant_event(0.0, i)
+                    self.__process_resistant_event(t0, i)
 
                 else:
-                    raise ValueError('Invalid initial seed state,',state)    
+                    raise ValueError('Invalid initial seed state,', state)    
         
          
     def seeds_to_states(self):
@@ -998,7 +1002,7 @@ def comp_state_over_time(sim, state, t_unit):
     Computes `state` variable over time [0, sim.max_time] 
     '''
     ts, val = [], []
-    for t in np.linspace(0.0, sim.max_time, num=sim.max_time+1, endpoint=True):
+    for t in np.linspace(sim.t0, sim.max_time, num=sim.max_time+1, endpoint=True):
         s = sum([np.sum(is_state_at(sim, status, t)) for status in state])
         ts.append(t/t_unit)
         val.append(s)

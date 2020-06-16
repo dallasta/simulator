@@ -167,16 +167,15 @@ def _simulate_individual_real_trace(indiv, max_time, site_type, mob_rate_per_typ
 @numba.njit
 def _simulate_synthetic_mobility_traces(*, num_people, num_sites, max_time, home_loc, site_loc,
                             site_type, people_age, mob_rate_per_age_per_type, dur_mean_per_type,
-                            delta, forbidden, seed):
+                            delta,  seed):
     rd.seed(seed)
     np.random.seed(seed-1)
     data, visit_counts = list(), list()
 
     for i in range(num_people):
-        if i not in forbidden:
         # use mobility rates of specific age group
-            mob_rate_per_type = mob_rate_per_age_per_type[people_age[i]]
-            data_i = _simulate_individual_synthetic_trace(
+        mob_rate_per_type = mob_rate_per_age_per_type[people_age[i]]
+        data_i = _simulate_individual_synthetic_trace(
             	indiv=i,
             	num_sites=num_sites,
             	max_time=max_time,
@@ -187,26 +186,25 @@ def _simulate_synthetic_mobility_traces(*, num_people, num_sites, max_time, home
             	dur_mean_per_type=dur_mean_per_type,
             	delta=delta)
 
-            data.extend(data_i)
-            visit_counts.append(len(data_i)) 
+        data.extend(data_i)
+        visit_counts.append(len(data_i)) 
 
     return data, visit_counts
 
 @numba.njit
 def _simulate_real_mobility_traces(*, num_people, max_time, site_type, people_age, mob_rate_per_age_per_type,
-                            dur_mean_per_type, home_tile, tile_site_dist, variety_per_type, delta, forbidden, seed):
+                            dur_mean_per_type, home_tile, tile_site_dist, variety_per_type, delta, seed):
     rd.seed(seed)
     np.random.seed(seed-1)
     data, visit_counts = list(), list()
 
     for i in range(num_people):
-        if i not in forbidden:
-            # use mobility rates of specific age group 
-            mob_rate_per_type = mob_rate_per_age_per_type[people_age[i]]
-            # use site distances from specific tiles
-            site_dist = tile_site_dist[home_tile[i]] 
+        # use mobility rates of specific age group 
+        mob_rate_per_type = mob_rate_per_age_per_type[people_age[i]]
+        # use site distances from specific tiles
+        site_dist = tile_site_dist[home_tile[i]] 
 
-            data_i = _simulate_individual_real_trace( 
+        data_i = _simulate_individual_real_trace( 
             	indiv=i,
             	max_time=max_time,
             	site_type=site_type,
@@ -216,8 +214,8 @@ def _simulate_real_mobility_traces(*, num_people, max_time, site_type, people_ag
             	variety_per_type=variety_per_type,
             	site_dist=site_dist)
 
-            data.extend(data_i)
-            visit_counts.append(len(data_i)) 
+        data.extend(data_i)
+        visit_counts.append(len(data_i)) 
 
     return data, visit_counts
 
@@ -467,7 +465,7 @@ class MobilitySimulator:
         with open(path, 'wb') as fp:
             pickle.dump(self, fp)
 
-    def _simulate_mobility(self, max_time, forbidden, seed=None):
+    def _simulate_mobility(self, max_time, seed=None):
         """
         Simulate mobility of all people for `max_time` time units
 
@@ -505,8 +503,7 @@ class MobilitySimulator:
                 people_age=self.people_age,
                 mob_rate_per_age_per_type=self.mob_rate_per_age_per_type,
                 dur_mean_per_type=self.dur_mean_per_type,
-                delta=self.delta,
-                forbidden=forbidden,
+                delta=self.delta, 
                 seed=rd.randint(0, 2**32 - 1)
                 )
 
@@ -521,8 +518,7 @@ class MobilitySimulator:
                 delta=self.delta,
                 home_tile=self.home_tile,
                 variety_per_type=self.variety_per_type,
-                tile_site_dist=self.tile_site_dist,
-                forbidden=forbidden,
+                tile_site_dist=self.tile_site_dist, 
                 seed=rd.randint(0, 2**32 - 1)
                 )
 
@@ -650,7 +646,7 @@ class MobilitySimulator:
             mob_traces_dict[v.indiv].update([v])
         return mob_traces_dict
 
-    def simulate(self, max_time, forbidden, seed=None, dynamic_tracing=False):
+    def simulate(self, max_time, seed=None, dynamic_tracing=False):
         """
         Simulate contacts between individuals in time window [0, max_time].
 
@@ -682,7 +678,7 @@ class MobilitySimulator:
         if self.verbose:
             print(f'Simulate mobility for {max_time:.2f} time units... ',
                   end='', flush=True)
-        all_mob_traces = self._simulate_mobility(max_time, forbidden, seed)
+        all_mob_traces = self._simulate_mobility(max_time,  seed)
         self.all_mob_traces = all_mob_traces
 
         if self.verbose:
