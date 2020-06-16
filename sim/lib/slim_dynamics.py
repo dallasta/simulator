@@ -890,6 +890,10 @@ class DiseaseModel(object):
                 elif state == 'susc':
                     self.state['susc'][i] = True
 
+                elif state == 'dead':
+                    self.state['dead'][i] = True
+                    self.state_started_at['dead'][i] = -1.0
+                    self.bernoulli_is_iasy[i] = 0
                 # inital exposed
                 elif state == 'expo':
                     self.state['quar'][i] = False
