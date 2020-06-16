@@ -467,7 +467,7 @@ class MobilitySimulator:
         with open(path, 'wb') as fp:
             pickle.dump(self, fp)
 
-    def _simulate_mobility(self, max_time, fobidden, seed=None):
+    def _simulate_mobility(self, max_time, forbidden, seed=None):
         """
         Simulate mobility of all people for `max_time` time units
 
@@ -682,7 +682,7 @@ class MobilitySimulator:
         if self.verbose:
             print(f'Simulate mobility for {max_time:.2f} time units... ',
                   end='', flush=True)
-        all_mob_traces = self._simulate_mobility(max_time, seed, forbidden)
+        all_mob_traces = self._simulate_mobility(max_time, forbidden, seed)
         self.all_mob_traces = all_mob_traces
 
         if self.verbose:
