@@ -364,7 +364,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['expo'][i]) # no need to check quar state
+        #assert(self.state['expo'][i]) 
        
         self.state['ipre'][i] = True
         self.state['expo'][i] = False
@@ -391,7 +391,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['ipre'][i]) # no need to check quar state
+        #assert(self.state['ipre'][i]) # no need to check quar state
        
         self.state['isym'][i] = True
         self.state['ipre'][i] = False
@@ -422,7 +422,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['expo'][i]) # no need to check quar state
+        #assert(self.state['expo'][i]) # no need to check quar state
        
         self.state['iasy'][i] = True
         self.state['expo'][i] = False
@@ -475,7 +475,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['isym'][i])  # no need to check quar state
+        #assert(self.state['isym'][i])  # no need to check quar state
        
         self.state['dead'][i] = True
         self.state_started_at['dead'][i] = t
@@ -494,7 +494,7 @@ class DiseaseModel(object):
         """
 
         # track flags
-        assert(self.state['isym'][i]) # no need to check quar state
+        #assert(self.state['isym'][i]) # no need to check quar state
        
         self.state['hosp'][i] = True
         self.state_started_at['hosp'][i] = t
@@ -889,11 +889,14 @@ class DiseaseModel(object):
 
                 elif state == 'susc':
                     self.state['susc'][i] = True
+                    self.was_initial_seed[i] = False
 
                 elif state == 'dead':
                     self.state['dead'][i] = True
+                    self.was_initial_seed[i] = False
                     self.state_started_at['dead'][i] = -1.0
                     self.bernoulli_is_iasy[i] = 0
+                    self.__process_fatal_event(0.0, i)
                 # inital exposed
                 elif state == 'expo':
                     self.state['quar'][i] = False
@@ -901,8 +904,10 @@ class DiseaseModel(object):
 
                 elif state == 'hosp':
                     self.state['hosp'][i] = True
+                    self.was_initial_seed[i] = False
                     self.state_started_at['hosp'][i] = -1.0
                     self.bernoulli_is_iasy[i] = 0
+                    self.__process_hosp_event(0.0, i)
 
                 # initial presymptomatic
                 elif state == 'ipre':
