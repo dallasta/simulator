@@ -24,7 +24,8 @@ pp_legal_states = ['susc', 'expo', 'ipre', 'isym', 'iasy', 'resi', 'dead', 'hosp
 ######################## functions and classes for launching the simulation ##############################
 
 #def run(mob_settings, intensity_params, distributions, t, ini_seeds):
-def run(mob, intensity_params, distributions, tstart, tfinal, ini_seeds):
+def run(mob, intensity_params, distributions, tstart, tfinal, ini_seeds,
+        input_deltas):
  
     # run simulations
     summary = launch_simulation(
@@ -35,12 +36,13 @@ def run(mob, intensity_params, distributions, tstart, tfinal, ini_seeds):
         ini_seeds, 
 	t0=tstart,
         max_time=tfinal,
+        input_deltas=input_deltas,
         )
     return summary
 
 
 def launch_simulation(mob, distributions, params, 
-    initial_seeds, t0, max_time):
+    initial_seeds, t0, max_time, input_deltas):
     
 
     #with open(mob_settings, 'rb') as fp:
@@ -60,6 +62,7 @@ def launch_simulation(mob, distributions, params,
         params=params,
         t0=t0,
         ini_seeds=initial_seeds,
+        input_deltas=input_deltas,
         verbose=True)
     
     
@@ -72,8 +75,16 @@ def launch_simulation(mob, distributions, params,
         'children_count_iasy': sim.children_count_iasy,
         'children_count_ipre': sim.children_count_ipre,
         'children_count_isym': sim.children_count_isym,
-        'initial_seeds': sim.initial_seeds
+        'initial_seeds': sim.initial_seeds,
+        'delta_expo_to_ipre': sim.delta_expo_to_ipre,
+        'delta_ipre_to_isym': sim.delta_ipre_to_isym,
+        'delta_expo_to_iasy': sim.delta_expo_to_iasy,
+        'delta_isym_to_resi': sim.delta_isym_to_resi,
+        'delta_isym_to_dead': sim.delta_isym_to_dead,
+        'delta_iasy_to_resi': sim.delta_iasy_to_resi,
+        'delta_isym_to_hosp': sim.delta_isym_to_hosp,
     }
+    
     
     
     summary = Summary(t0, max_time, num_people, num_sites, site_loc, home_loc)
@@ -92,6 +103,12 @@ def launch_simulation(mob, distributions, params,
     summary.seeds = res['initial_seeds']
     summary.mob = mob
     
+    summary.delta_ipre_to_isym[:] = res['delta_ipre_to_isym']
+    summary.delta_expo_to_iasy[:] = res['delta_expo_to_iasy']
+    summary.delta_isym_to_resi[:] = res['delta_isym_to_resi']
+    summary.delta_isym_to_dead[:] = res['delta_isym_to_dead']
+    summary.delta_iasy_to_resi[:] = res['delta_iasy_to_resi']
+    summary.delta_isym_to_hosp[:] = res['delta_isym_to_hosp']
     return summary
 
 
@@ -154,9 +171,15 @@ class Summary(object):
         self.children_count_ipre = np.zeros(n_people, dtype='int')
         self.children_count_isym = np.zeros(n_people, dtype='int')
         self.seeds = {}
-  
+ 
 
-        
+        self.delta_expo_to_ipre = np.zeros(n_people, dtype='int')
+        self.delta_ipre_to_isym = np.zeros(n_people, dtype='int')
+        self.delta_expo_to_iasy = np.zeros(n_people, dtype='int')
+        self.delta_isym_to_resi = np.zeros(n_people, dtype='int')
+        self.delta_isym_to_dead = np.zeros(n_people, dtype='int')
+        self.delta_iasy_to_resi = np.zeros(n_people, dtype='int')
+        self.delta_isym_to_hosp = np.zeros(n_people, dtype='int')
         
 def get_seeds(num,initial_counts):
     # init state variables with seeds
@@ -277,7 +300,7 @@ class DiseaseModel(object):
             'resi' : ['isym', 'iasy'],
             'dead' : ['isym',],
             'hosp' : ['isym',],
-	    'quar' : ['isym', 'iasy'],
+	    'quar' : ['isym', 'iasy', 'ipre'],
         }
 
         self.state = {
@@ -507,7 +530,7 @@ class DiseaseModel(object):
     
     def __process_quarantine_event(self, t, i):
         """
-        Mark person `i` as hospitalized at time `t`
+        Mark person `i` as quarantined at time `t`
         """
 
         # track flags
@@ -661,7 +684,7 @@ class DiseaseModel(object):
             sampled_event = True
 
     
-    def launch_epidemic(self, params, t0, ini_seeds, verbose=True):
+    def launch_epidemic(self, params, t0, ini_seeds, input_deltas, verbose=True):
         """
         Run the epidemic, starting from initial event list.
         Events are treated in order in a priority queue. An event in the queue is a tuple
@@ -693,20 +716,27 @@ class DiseaseModel(object):
         
         ### sample all iid events ahead of time in batch
         batch_size = (self.n_people, )
-        self.delta_expo_to_ipre = self.d.sample_expo_ipre(size=batch_size)
-        self.delta_ipre_to_isym = self.d.sample_ipre_isym(size=batch_size)
-        self.delta_isym_to_resi = self.d.sample_isym_resi(size=batch_size)
-        self.delta_isym_to_dead = self.d.sample_isym_dead(size=batch_size)
-        self.delta_expo_to_iasy = self.d.sample_expo_iasy(size=batch_size)
-        self.delta_iasy_to_resi = self.d.sample_iasy_resi(size=batch_size)
-        self.delta_isym_to_hosp = self.d.sample_isym_hosp(size=batch_size)
+        if t0 == 0:
+            self.delta_expo_to_ipre = self.d.sample_expo_ipre(size=batch_size)
+            self.delta_ipre_to_isym = self.d.sample_ipre_isym(size=batch_size)
+            self.delta_isym_to_resi = self.d.sample_isym_resi(size=batch_size)
+            self.delta_isym_to_dead = self.d.sample_isym_dead(size=batch_size)
+            self.delta_expo_to_iasy = self.d.sample_expo_iasy(size=batch_size)
+            self.delta_iasy_to_resi = self.d.sample_iasy_resi(size=batch_size)
+            self.delta_isym_to_hosp = self.d.sample_isym_hosp(size=batch_size)
+        else:
+            self.delta_expo_to_ipre = input_deltas['delta_expo_to_ipre']
+            self.delta_ipre_to_isym = input_deltas['delta_ipre_to_isym']
+            self.delta_isym_to_resi = input_deltas['delta_isym_to_resi']
+            self.delta_isym_to_dead = input_deltas['delta_isym_to_dead']
+            self.delta_expo_to_iasy = input_deltas['delta_expo_to_iasy']
+            self.delta_iasy_to_resi = input_deltas['delta_iasy_to_resi']
+            self.delta_isym_to_hosp = input_deltas['delta_isym_to_hosp']
 
         self.bernoulli_is_iasy = np.random.binomial(1, self.alpha, size=batch_size)
         self.bernoulli_is_fatal = self.d.sample_is_fatal(self.people_age, size=batch_size)
         self.bernoulli_is_hospi = self.d.sample_is_hospitalized(self.people_age, size=batch_size)
 
-        
- 
         # initial seed
         self.initialize_states_for_seeds(t0)
    
@@ -868,9 +898,8 @@ class DiseaseModel(object):
         assert(isinstance(self.initial_seeds, dict))
         for state, seeds_ in self.initial_seeds.items():
             for i in seeds_:
-                assert(self.was_initial_seed[i] == False)
-                self.was_initial_seed[i] = True
-                
+                #assert(self.was_initial_seed[i] == False) WARNING: this is a problem when you have as input a node which is both 'isym' and 'hosp'
+                self.was_initial_seed[i] = True                
                 if state == 'quar':
                     self.state['quar'][i] = True
                     self.state['expo'][i] = False 
@@ -909,7 +938,7 @@ class DiseaseModel(object):
 
                 elif state == 'hosp':
                     self.state['isym'][i] = True
-                    self.was_initial_seed[i] = False
+                    self.was_initial_seed[i] = True
                     self.bernoulli_is_iasy[i] = 0
                     self.__process_hosp_event(t0, i)
 
@@ -960,6 +989,7 @@ class DiseaseModel(object):
                     self.state['susc'][i] = False
                     self.state['isym'][i] = True
 
+                    self.was_initial_seed[i] = False
                     self.state_ended_at['susc'][i] = -1.0
                     self.state_started_at['expo'][i] = -1.0
                     self.state_ended_at['expo'][i] = -1.0
