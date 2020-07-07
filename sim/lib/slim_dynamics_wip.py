@@ -23,6 +23,7 @@ pp_legal_states = ['susc', 'expo', 'ipre', 'isym', 'iasy', 'resi', 'dead', 'hosp
 
 ######################## functions and classes for launching the simulation ##############################
 
+    
 def run(mob_settings, intensity_params, distributions, t, ini_seeds):
 
      # run simulations
@@ -192,7 +193,7 @@ class DiseaseModel(object):
         # cache settings
         self.mob = mob
         self.d = distributions
-        
+        self.t0 = 0
         # parse distributions object
         self.lambda_0 = self.d.lambda_0
         self.gamma = self.d.gamma
@@ -624,9 +625,183 @@ class DiseaseModel(object):
 
             sampled_event = True
 
+    def init_all(self, params, ini_seeds):
+        
+        self.verbose = True
 
+        # optimized params
+        self.betas = params['betas']
+        self.mu = self.d.mu
+        self.alpha = self.d.alpha
+
+        # household param
+        if 'beta_household' in params:
+            self.beta_household = params['beta_household']
+        else:
+            self.beta_household = 0.0
+
+       
+        
+
+        self.__init_run()
+        self.was_initial_seed = np.zeros(self.n_people, dtype='bool')
+        
+        # init state variables with seeds
+        self.initial_seeds = dict(ini_seeds)        
+        
+        
+        ### sample all iid events ahead of time in batch
+        batch_size = (self.n_people, )
+        self.delta_expo_to_ipre = self.d.sample_expo_ipre(size=batch_size)
+        self.delta_ipre_to_isym = self.d.sample_ipre_isym(size=batch_size)
+        self.delta_isym_to_resi = self.d.sample_isym_resi(size=batch_size)
+        self.delta_isym_to_dead = self.d.sample_isym_dead(size=batch_size)
+        self.delta_expo_to_iasy = self.d.sample_expo_iasy(size=batch_size)
+        self.delta_iasy_to_resi = self.d.sample_iasy_resi(size=batch_size)
+        self.delta_isym_to_hosp = self.d.sample_isym_hosp(size=batch_size)
+
+        self.bernoulli_is_iasy = np.random.binomial(1, self.alpha, size=batch_size)
+        self.bernoulli_is_fatal = self.d.sample_is_fatal(self.people_age, size=batch_size)
+        self.bernoulli_is_hospi = self.d.sample_is_hospitalized(self.people_age, size=batch_size)
+
+        
  
-    
+        # initial seed
+        self.initialize_states_for_seeds()
+   
+ 
+        # not initially seeded
+        if self.lambda_0 > 0.0:
+            delta_susc_to_expo = self.d.sample_susc_baseexpo(size=self.n_people)
+            for i in range(self.n_people):
+                if not self.was_initial_seed[i]:
+                    # sample non-contact exposure events
+                    self.queue.push(
+                        (delta_susc_to_expo[i], 'expo', i, None, None),
+                        priority=delta_susc_to_expo[i])           
+        self.t0 = 0  
+
+            
+    def run_one_step_dyn(self, t0, max_time, excluded):
+
+        t = self.t0
+        while self.queue:
+
+            # get next event to process
+            t, event, i, infector, k = self.queue.pop()
+            #print(t, event, i, infector, k)
+            # check termination
+            if t > max_time:
+                self.queue.push((t, event, i, infector,k))
+                self.t0 = max_time
+                t = max_time
+                self.__print(t, force=True)
+                if self.verbose:
+                    print(f'\n[Reached max time: {int(max_time)}h ({int(max_time // 24)}d)]')
+                break
+            if np.sum((1 - self.state['susc']) * (self.state['resi'] + self.state['dead'])) == self.n_people:
+                if self.verbose:
+                    print('\n[Simulation ended]')
+                break
+
+            # process event
+            if event == 'expo':
+                i_susceptible = ((not self.state['expo'][i])
+                                    and (self.state['susc'][i]))
+
+                # base rate exposure
+                if (infector is None) and i_susceptible:
+                    self.__process_exposure_event(t, i, None)
+
+                # household exposure
+                if (infector is not None) and i_susceptible and k == -1:
+
+                    # 1) check whether infector recovered or dead
+                    infector_recovered = \
+                        (self.state['resi'][infector] or 
+                            self.state['dead'][infector])
+
+                    # 2) check whether infector got hospitalized
+                    infector_hospitalized = self.state['hosp'][infector]
+
+                    # 3) check whether infector or i are not at home
+                    infector_away_from_home = False
+                    i_away_from_home = False
+
+                    infector_visits = self.mob.mob_traces[infector].find((t, t))
+                    i_visits = self.mob.mob_traces[i].find((t, t))
+
+                    for interv in infector_visits:
+                        infector_away_from_home = (interv.t_to > t)
+                        if infector_away_from_home:
+                            break
+
+                    for interv in i_visits:
+                        i_away_from_home = i_away_from_home or (interv.t_to > t)
+
+                    away_from_home = (infector_away_from_home or i_away_from_home)
+           
+
+                    # if none of 1), 2), 3) are true, the event is valid
+                    if  (not infector_recovered) and (not infector_hospitalized) and (not away_from_home):
+
+                        self.__process_exposure_event(t, i, infector)
+
+                    # if 2) or 3) were true, a household infection could happen at a later point, hence sample a new event
+                    if (infector_hospitalized or away_from_home):
+
+                        mu_infector = self.mu if self.state['iasy'][infector] else 1.0
+                        self.__push_household_exposure_infector_to_j(
+                            t=t, infector=infector, j=i, base_rate=mu_infector) 
+
+                # contact exposure
+                if (infector is not None) and i_susceptible and k >= 0:
+
+                    is_in_contact, contact = self.mob.is_in_contact(indiv_i=i, indiv_j=infector, site=k, t=t)
+                    assert(is_in_contact and (k is not None))
+                    i_visit_id, infector_visit_id = contact.id_tup
+
+                    # 1) check whether infector recovered or dead
+                    infector_recovered = \
+                        (self.state['resi'][infector] or 
+                            self.state['dead'][infector])
+
+                    
+                    # if 1 is not true, the event is valid
+                    if  (not infector_recovered):
+                    
+                        self.__process_exposure_event(t, i, infector)
+
+                   
+            elif event == 'ipre':
+                self.__process_presymptomatic_event(t, i)
+
+            elif event == 'iasy':
+                self.__process_asymptomatic_event(t, i)
+
+            elif event == 'isym':
+                self.__process_symptomatic_event(t, i)
+
+            elif event == 'resi':
+                self.__process_resistant_event(t, i)
+
+            elif event == 'dead':
+                self.__process_fatal_event(t, i)
+
+            elif event == 'hosp':
+                # cannot get hospitalization if not ill anymore 
+                valid_hospitalization = \
+                    ((not self.state['resi'][i]) and 
+                        (not self.state['dead'][i]))
+
+                if valid_hospitalization:
+                    self.__process_hosp_event(t, i)
+            else:
+                # this should only happen for invalid exposure events
+                assert(event == 'expo')
+
+            # print
+            self.__print(t, force=True)
 
     
     def launch_epidemic(self, params, ini_seeds, verbose=True):
