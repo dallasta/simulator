@@ -315,7 +315,6 @@ class DiseaseModel(object):
         self.initial_seeds = dict()
  
  
-    
 
     def __process_exposure_event(self, t, i, parent):
         """
@@ -351,7 +350,7 @@ class DiseaseModel(object):
                 (t + self.delta_expo_to_ipre[i], 'ipre', i, None, None),
                 priority=t + self.delta_expo_to_ipre[i])
 
-    def __process_presymptomatic_event(self, t, i):
+    def __process_presymptomatic_event(self, t, i, excluded):
         """
         Mark person `i` as presymptomatic at time `t`
         Push symptomatic queue event
@@ -370,7 +369,8 @@ class DiseaseModel(object):
             priority=t + self.delta_ipre_to_isym[i])
 
         # contact exposure of others
-        self.__push_contact_exposure_events(t, i, 1.0)
+        if not excluded[i]:
+            self.__push_contact_exposure_events(t, i, 1.0)
         
         # household exposures
         if self.households is not None and self.beta_household > 0:
@@ -406,7 +406,7 @@ class DiseaseModel(object):
                 (t + self.delta_isym_to_resi[i], 'resi', i, None, None),
                 priority=t + self.delta_isym_to_resi[i])
 
-    def __process_asymptomatic_event(self, t, i, add_exposures=True):
+    def __process_asymptomatic_event(self, t, i, excluded, add_exposures=True):
         """
         Mark person `i` as asymptomatic at time `t`
         Push resistant queue event
@@ -424,10 +424,10 @@ class DiseaseModel(object):
             (t + self.delta_iasy_to_resi[i], 'resi', i, None, None),
             priority=t + self.delta_iasy_to_resi[i])
 
-        if add_exposures:
+        if add_exposures and not excluded[i]:
             # contact exposure of others
             self.__push_contact_exposure_events(t, i, self.mu)
-            
+        if add_exposures:
             # household exposures
             if self.households is not None and self.beta_household > 0:
                 self.__push_household_exposure_events(t, i, self.mu)
@@ -638,17 +638,13 @@ class DiseaseModel(object):
         if 'beta_household' in params:
             self.beta_household = params['beta_household']
         else:
-            self.beta_household = 0.0
-
-       
-        
+            self.beta_household = 0.0        
 
         self.__init_run()
         self.was_initial_seed = np.zeros(self.n_people, dtype='bool')
         
         # init state variables with seeds
         self.initial_seeds = dict(ini_seeds)        
-        
         
         ### sample all iid events ahead of time in batch
         batch_size = (self.n_people, )
@@ -664,12 +660,9 @@ class DiseaseModel(object):
         self.bernoulli_is_fatal = self.d.sample_is_fatal(self.people_age, size=batch_size)
         self.bernoulli_is_hospi = self.d.sample_is_hospitalized(self.people_age, size=batch_size)
 
-        
- 
         # initial seed
         self.initialize_states_for_seeds()
    
- 
         # not initially seeded
         if self.lambda_0 > 0.0:
             delta_susc_to_expo = self.d.sample_susc_baseexpo(size=self.n_people)
@@ -689,9 +682,10 @@ class DiseaseModel(object):
 
             # get next event to process
             t, event, i, infector, k = self.queue.pop()
-            #print(t, event, i, infector, k)
+
             # check termination
             if t > max_time:
+                # re-push last event (otherwise it is lost in the next run)
                 self.queue.push((t, event, i, infector,k))
                 self.t0 = max_time
                 t = max_time
@@ -744,40 +738,39 @@ class DiseaseModel(object):
 
                     # if none of 1), 2), 3) are true, the event is valid
                     if  (not infector_recovered) and (not infector_hospitalized) and (not away_from_home):
-
                         self.__process_exposure_event(t, i, infector)
 
                     # if 2) or 3) were true, a household infection could happen at a later point, hence sample a new event
                     if (infector_hospitalized or away_from_home):
-
                         mu_infector = self.mu if self.state['iasy'][infector] else 1.0
                         self.__push_household_exposure_infector_to_j(
                             t=t, infector=infector, j=i, base_rate=mu_infector) 
 
                 # contact exposure
                 if (infector is not None) and i_susceptible and k >= 0:
-
-                    is_in_contact, contact = self.mob.is_in_contact(indiv_i=i, indiv_j=infector, site=k, t=t)
-                    assert(is_in_contact and (k is not None))
-                    i_visit_id, infector_visit_id = contact.id_tup
+                    # not quarantined people
+                    if not excluded[infector] and not excluded[i]:
+                        is_in_contact, contact = self.mob.is_in_contact(indiv_i=i, indiv_j=infector, site=k, t=t)
+                        assert(is_in_contact and (k is not None))
+                        i_visit_id, infector_visit_id = contact.id_tup
 
                     # 1) check whether infector recovered or dead
-                    infector_recovered = \
-                        (self.state['resi'][infector] or 
-                            self.state['dead'][infector])
+                        infector_recovered = \
+                            (self.state['resi'][infector] or 
+                                self.state['dead'][infector])
 
                     
                     # if 1 is not true, the event is valid
-                    if  (not infector_recovered):
-                    
-                        self.__process_exposure_event(t, i, infector)
-
+                        if  (not infector_recovered):
+                            self.__process_exposure_event(t, i, infector)
                    
             elif event == 'ipre':
-                self.__process_presymptomatic_event(t, i)
+                self.__process_presymptomatic_event(t, i, excluded)
+                #self.__process_presymptomatic_event(t, i)
 
             elif event == 'iasy':
-                self.__process_asymptomatic_event(t, i)
+                self.__process_asymptomatic_event(t, i, excluded)
+                #self.__process_asymptomatic_event(t, i)
 
             elif event == 'isym':
                 self.__process_symptomatic_event(t, i)
@@ -953,7 +946,6 @@ class DiseaseModel(object):
                     
                     # if 1 is not true, the event is valid
                     if  (not infector_recovered):
-                    
                         self.__process_exposure_event(t, i, infector)
 
                    
